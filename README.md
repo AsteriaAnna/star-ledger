@@ -4,6 +4,8 @@
 
 ## 使用
 
+直接打开：https://asteriaanna.github.io/star-ledger/
+
 - 本仓库根目录包含可直接发布的网页应用。`index.html` 是完整应用。
 - Windows 可以下载本仓库 ZIP，解压后用 Edge 或 Chrome 打开 `index.html`。首次使用先添加账户和期初余额。
 - 手机与桌面安装到主屏幕需要 HTTPS 网站地址。仓库地址本身不是应用地址。
