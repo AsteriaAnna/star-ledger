@@ -42,18 +42,20 @@ function recognizeRow({source,kindText,merchant,note,remark,direction,status,des
   const topup=/零钱充值|充值/.test(kindText)&&!/话费|会员/.test(kindText);
   const withdrawal=/零钱提现|提现/.test(kindText);
   const transfer=/转账|收款|转入|转出/.test(kindText);
-  let eventType='unclassified';
-  if(closed)eventType='closed';
-  else if(refundRow)eventType='refund';
-  else if(repayment)eventType='liability_repayment';
-  else if(topup||withdrawal)eventType='internal_transfer';
-  else if(transfer&&d.code==='out')eventType='transfer';
-  else if(d.code==='out')eventType='expense';
-  else if(d.code==='in')eventType='income';
-  else if(transfer)eventType='transfer';
-  else if(descriptor.payerType==='family-card'&&d.code==='neutral')eventType='expense';
-  else if(d.code==='neutral')eventType='neutral';
-  const orderStatus=closed?'closed':/等待确认收货/.test(status)?'waiting_receipt':refundRow?(/全额|全部/.test(text)?'refunded':'refund_posted'):/还款成功/.test(status)?'repayment_completed':/充值完成/.test(status)?'topup_completed':/提现已到账/.test(status)?'withdrawal_completed':/支付成功|交易成功|已存入零钱|对方已收钱|对方已退还/.test(status)?'completed':'unknown';
+  let baseEventType='unclassified';
+  if(refundRow)baseEventType='refund';
+  else if(repayment)baseEventType='liability_repayment';
+  else if(topup||withdrawal)baseEventType='internal_transfer';
+  else if(transfer)baseEventType='transfer';
+  else if(d.code==='out')baseEventType='expense';
+  else if(d.code==='in')baseEventType='income';
+  else if(descriptor.payerType==='family-card'&&d.code==='neutral')baseEventType='expense';
+  else if(d.code==='neutral')baseEventType='neutral';
+  const eventType=closed?'closed':baseEventType;
+  const transferReturned=baseEventType==='transfer'&&d.code==='out'&&/对方已退还|已退回|全额退还/.test(text);
+  const amountMatch=status.match(/(?:已退款|退款成功|部分退款)[（(￥¥\s]*(\d+(?:\.\d{1,2})?)/);
+  const statusRefundAmount=amountMatch?Math.min(amount,toCents(amountMatch[1])||0):(/已全额退款|全额退款成功|对方已退还|全额退还/.test(text)?amount:0);
+  const orderStatus=closed?'closed':transferReturned?'returned':/等待确认收货/.test(status)?'waiting_receipt':refundRow?(/全额|全部/.test(text)?'refunded':'refund_posted'):/还款成功/.test(status)?'repayment_completed':/充值完成/.test(status)?'topup_completed':/提现已到账/.test(status)?'withdrawal_completed':/支付成功|交易成功|已存入零钱|对方已收钱/.test(status)?'completed':'unknown';
   const postingStatus=closed?'not_posted':refundRow?'reversal_posted':orderStatus==='unknown'?'unknown':'posted';
   const flow={fromLabel:'',fromType:'unknown',toLabel:'',toType:'unknown',relationRequired:false};
   const wallet=walletEndpoint(source);
@@ -64,19 +66,24 @@ function recognizeRow({source,kindText,merchant,note,remark,direction,status,des
     else {flow.fromLabel=paid.label;flow.fromType=paid.type;flow.toLabel=wallet.label;flow.toType='account';}
   }else if(eventType==='liability_repayment'){
     flow.fromLabel=paid.label;flow.fromType=paid.type;flow.toLabel=clean(merchant)||'花呗';flow.toType='liability';
-  }else if(eventType==='expense'||eventType==='transfer'){
+  }else if(baseEventType==='expense'){
     flow.fromLabel=paid.label;flow.fromType=paid.type;flow.toLabel=clean(merchant);flow.toType='external';
+  }else if(baseEventType==='transfer'){
+    if(d.code==='in'){flow.fromLabel=clean(merchant);flow.fromType='external';flow.toLabel=wallet.label;flow.toType='account';}
+    else {flow.fromLabel=paid.label;flow.fromType=paid.type;flow.toLabel=clean(merchant);flow.toType='external';}
   }else if(eventType==='income'){
     flow.fromLabel=clean(merchant);flow.fromType='external';flow.toLabel=wallet.label;flow.toType='account';
   }else if(eventType==='refund'){
-    flow.relationRequired=true;
+    flow.fromLabel=clean(merchant);flow.fromType='external';flow.toLabel=paid.label;flow.toType=paid.type;flow.relationRequired=true;
+  }else if(eventType==='closed'&&['expense','transfer'].includes(baseEventType)){
+    if(baseEventType==='transfer'&&d.code==='in'){flow.fromLabel=clean(merchant);flow.fromType='external';flow.toLabel=wallet.label;flow.toType='account';}
+    else {flow.fromLabel=paid.label;flow.fromType=paid.type;flow.toLabel=clean(merchant);flow.toType='external';}
   }
   const review=[];
   if(eventType==='unclassified')review.push({type:'UNCLASSIFIED_EVENT',blocking:false});
   if(eventType==='expense'&&descriptor.payerType!=='family-card'&&!flow.fromLabel)review.push({type:'MISSING_PAYMENT_CHANNEL',blocking:false});
-  if(eventType==='transfer'&&flow.toType==='external')review.push({type:'TRANSFER_PURPOSE',blocking:false});
   if(eventType==='refund')review.push({type:'REFUND_RELATION',blocking:false});
-  return {platformDirection:d,eventType,orderStatus,postingStatus,reversalStatus:partialRefund?'partial_refund':refundRow?(orderStatus==='refunded'?'full_refund':'refund_posted'):null,flow,review,symbols:{direction:d.kind,slash:direction==='/'?'column_placeholder':null,closed,refund:refundMarker,refundRow,partialRefund,repayment,topup,withdrawal,transfer},version:3};
+  return {platformDirection:d,eventType,baseEventType,orderStatus,postingStatus,reversalStatus:transferReturned?'returned':partialRefund?'partial_refund':refundRow?(orderStatus==='refunded'?'full_refund':'refund_posted'):null,statusRefundAmount,flow,review,symbols:{direction:d.kind,slash:direction==='/'?'column_placeholder':null,closed,refund:refundMarker,refundRow,partialRefund,repayment,topup,withdrawal,transfer,transferReturned},version:4};
 }
 function importRows(rows,filename){
   const normalize=s=>clean(s).replace(/\s/g,'').replace(/（/g,'(').replace(/）/g,')');
@@ -114,7 +121,7 @@ function importRows(rows,filename){
     const orderId=clean(r[id]),merchantOrderId=clean(r[merchantOrder]),fingerprint=[d,amount,mer,n,kindText].join('|');
     const stable=source+'|'+(orderId&&orderId!=='/'&&orderId!=='-'?'order:'+orderId:'row:'+fingerprint);
     const recognition=recognizeRow({source,kindText,merchant:mer,note:n,remark:rem,direction:dir,status:st,descriptor,amount});
-    records.push({id:stable,source,orderId,merchantOrderId,date:d,amount,type,merchant:mer,note:[n,rem&&rem!=='/'?rem:''].filter(Boolean).join(' · '),category:categorize(mer,n+' '+kindText,type,kindText),status:st,payment:descriptor.raw,paymentKey:descriptor.primary,paymentParts:descriptor.parts,originalOrder:clean(r[originalOrder]),payerType,fee,recognition,raw:{kind:kindText,sourceCategory:kindText,direction:dir,directionHint,unclassifiedDirection:dir==='/'&&!directionHint,classificationVersion:3,symbols:recognition.symbols,columns:Object.fromEntries(h.map((k,j)=>[k,clean(r[j])])),merchantOrderId}});
+    records.push({id:stable,source,orderId,merchantOrderId,date:d,amount,type,merchant:mer,note:[n,rem&&rem!=='/'?rem:''].filter(Boolean).join(' · '),category:categorize(mer,n+' '+kindText,type,kindText),status:st,payment:descriptor.raw,paymentKey:descriptor.primary,paymentParts:descriptor.parts,originalOrder:clean(r[originalOrder]),payerType,fee,recognition,raw:{kind:kindText,sourceCategory:kindText,direction:dir,directionHint,unclassifiedDirection:dir==='/'&&!directionHint,classificationVersion:4,symbols:recognition.symbols,columns:Object.fromEntries(h.map((k,j)=>[k,clean(r[j])])),merchantOrderId}});
   });
   return {source,records,rejected,ignored,errors};
 }

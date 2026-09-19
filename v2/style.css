@@ -10,3 +10,6 @@
 .import-resolution{border:1px solid var(--line);border-radius:9px;padding:12px 15px;margin:16px 0}
 .import-resolution legend{color:var(--muted);font-size:.8rem;padding:0 6px}
 .import-resolution .check-row{margin:9px 0}
+.flow-strip{display:flex;align-items:center;gap:30px;margin:-8px 0 24px;padding:14px 20px;border:1px solid var(--line);border-radius:10px;background:rgba(var(--rgb),.025)}
+.flow-strip span{display:flex;align-items:baseline;gap:10px}.flow-strip small,.flow-strip p{font-size:.75rem;color:var(--muted)}.flow-strip strong{font-size:.95rem;font-weight:500;font-variant-numeric:tabular-nums}.flow-strip p{margin:0 0 0 auto}
+@media(max-width:680px){.flow-strip{gap:14px;flex-wrap:wrap}.flow-strip p{width:100%;margin:0}}
