@@ -1,4 +1,4 @@
-const CACHE='star-ledger-duo-v2.0.2';const ROOT=new URL('./',self.location).href;const FILES=['./','./index.html','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png'];
+const CACHE='star-ledger-duo-v2.1.0';const ROOT=new URL('./',self.location).href;const FILES=['./','./index.html','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('star-ledger-duo-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',event=>{const req=event.request,url=new URL(req.url);if(req.method!=='GET'||url.origin!==self.location.origin)return;if(req.mode==='navigate'){event.respondWith(fetch(req).then(r=>{if(r.ok){const copy=r.clone();caches.open(CACHE).then(c=>c.put(new URL('./index.html',ROOT),copy));}return r;}).catch(()=>caches.match(new URL('./index.html',ROOT))));return;}event.respondWith(caches.match(req).then(cached=>cached||fetch(req)));});
