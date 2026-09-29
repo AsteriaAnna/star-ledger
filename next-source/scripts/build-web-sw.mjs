@@ -9,3 +9,5 @@ self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise
 self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==self.location.origin||!u.href.startsWith(ROOT))return;if(e.request.mode==='navigate'){e.respondWith(fetch(e.request).catch(()=>caches.match(new URL('./index.html',ROOT))));return;}e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)));});`);
 writeFileSync('web-dist/.nojekyll','');
 console.log('Offline shell generated:',files.length,'files');
+
+writeFileSync('web-dist/THIRD-PARTY-NOTICES.txt',readFileSync('docs/THIRD-PARTY-NOTICES.txt'));

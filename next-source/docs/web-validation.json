@@ -12,7 +12,8 @@
     "Backup recovery recognizes existing encrypted remote commands without duplicate uploads",
     "Cached application reloads and writes real transactions offline",
     "All six mobile pages fit 390px viewport",
-    "No browser runtime errors in exercised workflows"
+    "No browser runtime errors in exercised workflows",
+    "Default opening time and immediate first purchase produce correct balance"
   ],
   "limitations": [
     "GitHub sync transport mocked; actual browser-to-GitHub authorization requires user credentials",
