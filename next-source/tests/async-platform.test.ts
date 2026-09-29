@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {pair} from './helpers.ts';
+import {AsyncNodeRepository} from '../packages/storage/async-node.ts';
+import {AsyncAccountingService} from '../packages/platform/async-accounting.ts';
+import {BusinessAccountingService} from '../packages/accounting/business.ts';
+import type {BusinessCommand} from '../packages/domain/accounting.ts';
+const account:BusinessCommand={kind:'CREATE_ACCOUNT',id:'bank',name:'Bank',accountType:'ASSET',openingBalance:100000,openingBalanceAt:'2026-09-01T00:00:00Z'};
+const purchase:BusinessCommand={kind:'PURCHASE',id:'p',name:'Demo',amount:4400,payer:'bank',occurredAt:'2026-09-20T00:00:00Z'};
+test('async command pipeline gives the same facts as existing synchronous service',async t=>{const {a,b}=pair(t);const asyncService=new AsyncAccountingService(new AsyncNodeRepository(a.store),'a'),syncService=new BusinessAccountingService(b.store,'b');for(const command of [account,purchase]){await asyncService.execute(command);syncService.execute(command);}for(const [type,id] of [['transactions','p'],['balance_movements','p:movement:0'],['consumption_effects','p:effect']] as const)assert.deepEqual(a.store.get(type,id),b.store.get(type,id));});
+test('concurrent async commands based on the same revision cannot silently overwrite',async t=>{const {a}=pair(t);const service=new AsyncAccountingService(new AsyncNodeRepository(a.store),'a');const results=await Promise.allSettled([service.execute(account),service.execute({...account,id:'other'})]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);const rejected=results.find(r=>r.status==='rejected') as PromiseRejectedResult;assert.match(rejected.reason.message,/STALE_STORAGE_REVISION/);assert.equal(a.store.allOperations().length,1);});
+test('async commit outbox failure leaves no facts or operation log',async t=>{const {a}=pair(t);const service=new AsyncAccountingService(new AsyncNodeRepository(a.store),'a');a.store.db.exec("CREATE TRIGGER async_fault BEFORE INSERT ON sync_outbox BEGIN SELECT RAISE(ABORT,'commit failed'); END;");await assert.rejects(()=>service.execute(account),/commit failed/);assert.equal(a.store.get('accounts','bank'),undefined);assert.equal(a.store.allOperations().length,0);});

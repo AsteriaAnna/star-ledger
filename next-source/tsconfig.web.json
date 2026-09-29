@@ -1,0 +1,5 @@
+{
+ "extends":"./tsconfig.json",
+ "compilerOptions":{"noEmit":false,"rootDir":".","outDir":"apps/native-probe/web/modules","rewriteRelativeImportExtensions":true,"types":[],"lib":["ES2023","DOM"]},
+ "include":["packages/platform/web-crypto.ts","packages/platform/bytes.ts"]
+}

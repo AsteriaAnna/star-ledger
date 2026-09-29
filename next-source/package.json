@@ -1,0 +1,37 @@
+{
+  "name": "ledger-core",
+  "version": "0.7.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.ts",
+    "demo": "node tests/demo.ts",
+    "sync:github": "node scripts/github-sync.ts",
+    "key:create": "node scripts/create-key.ts",
+    "typecheck": "tsc --noEmit",
+    "build:probe": "tsc -p tsconfig.web.json",
+    "check:platform": "node scripts/check-platform-boundary.ts",
+    "dev:web": "vite --config apps/web/vite.config.ts",
+    "build:web": "vite build --config apps/web/vite.config.ts && node scripts/build-web-sw.mjs",
+    "preview:web": "vite preview --config apps/web/vite.config.ts --host 127.0.0.1",
+    "test:web": "node scripts/test-web-ui.cjs",
+    "typecheck:web": "tsc -p apps/web/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.0.0",
+    "playwright": "1.56.1",
+    "typescript": "5.8.3"
+  },
+  "dependencies": {
+    "@noble/hashes": "1.8.0",
+    "read-excel-file": "5.8.8",
+    "tesseract.js": "6.0.1",
+    "vite": "6.4.1"
+  }
+}

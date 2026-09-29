@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {webSessionCrypto} from '../packages/platform/web-crypto.ts';
+import {newRecoveryKey,parseRecoveryKey,seal,unseal} from '../packages/sync/crypto.ts';
+import {makeBatch} from '../packages/sync/index.ts';
+import {pair,create,transaction} from './helpers.ts';
+import {PortableSecureSyncEngine} from '../packages/sync/secure-core.ts';
+import {SyncEngine,FakeSyncProvider} from '../packages/sync/index.ts';
+import {SecureSyncEngine} from '../packages/sync/secure-engine.ts';
+import type {EncryptedProvider,RemoteFile} from '../packages/sync/github.ts';
+test('Node AES-GCM envelope decrypts with Web Crypto unchanged',async t=>{const {a}=pair(t);const key=newRecoveryKey(),batch=makeBatch(a.service.execute([create(transaction())]));const web=await webSessionCrypto('interop',key);assert.deepEqual(await web.open(seal(batch,'interop',parseRecoveryKey(key))),batch);});
+test('Web Crypto envelope decrypts with existing Node implementation',async t=>{const {a}=pair(t);const key=newRecoveryKey(),batch=makeBatch(a.service.execute([create(transaction())]));const web=await webSessionCrypto('interop',key);assert.deepEqual(unseal(await web.seal(batch),'interop',parseRecoveryKey(key)),batch);});
+test('Web Crypto rejects altered metadata and authentication tag',async t=>{const {a}=pair(t);const key=newRecoveryKey(),batch=makeBatch(a.service.execute([create(transaction())]));const web=await webSessionCrypto('interop',key);const encoded=await web.seal(batch);let e=JSON.parse(encoded);e.seq++;await assert.rejects(async()=>web.open(JSON.stringify(e)),/AUTHENTICATION_FAILED/);e=JSON.parse(encoded);e.tag='AAAAAAAAAAAAAAAAAAAAAA==';await assert.rejects(async()=>web.open(JSON.stringify(e)),/AUTHENTICATION_FAILED/);});
+test('portable async encryption orchestrator interoperates with Node orchestrator',async t=>{
+ const {a,b}=pair(t),key=newRecoveryKey(),files=new Map<string,string>();
+ const provider:EncryptedProvider={healthCheck:async()=>{},list:async()=>[...files.keys()].map(path=>({path,sha:'test'})),download:async(f:RemoteFile)=>files.get(f.path)!,upload:async(path,body)=>{const old=files.get(path);if(old&&old!==body)throw Error('COLLISION');files.set(path,body);}};
+ a.service.execute([create(transaction())]);
+ const sa=new SecureSyncEngine(a.store,provider,'interop',key);
+ const sb=new PortableSecureSyncEngine(b.store,provider,'interop',await webSessionCrypto('interop',key),new SyncEngine(b.store,new FakeSyncProvider()));
+ await sa.sync();await sb.sync();assert.deepEqual(a.store.get('transactions','t'),b.store.get('transactions','t'));
+ b.service.execute([{action:'PATCH_FIELD',entity:{type:'transactions',id:'t',fields:{note:'Web Crypto path'}}}]);await sb.sync();await sa.sync();assert.equal(a.store.get('transactions','t')?.fields.note,'Web Crypto path');
+});
