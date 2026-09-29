@@ -1,5 +1,5 @@
 export type Json = null | boolean | number | string | Json[] | {[key:string]:Json};
-export type EntityType = 'transactions'|'accounts'|'source_records'|'balance_movements'|'consumption_effects'|'transaction_links';
+export type EntityType = 'transactions'|'accounts'|'source_records'|'balance_movements'|'consumption_effects'|'transaction_links'|'import_rules';
 export type Entity = {type:EntityType; id:string; fields:Record<string,Json>};
 export type Operation = {id:string; device:string; seq:number; command_id:string; command_index:number; command_size:number; parents:string[]; action:'CREATE_ENTITY'|'PATCH_FIELD'|'DELETE_ENTITY'|'RESOLVE_CONFLICT'; entity:Entity;};
 export type Batch = {version:1; device:string; seq:number; operations:Operation[]; checksum:string};
@@ -14,6 +14,7 @@ export type FieldVersion = {type:string;id:string;field:string;ids:string[]};
 export type Conflict = {id:string; entity_type:EntityType; entity_id:string; field:string; candidates:{operation_id:string;value:Json}[]};
 // All money is integer CNY fen. Liability positive movement increases debt.
 export const fields:Record<EntityType,Record<string,'string'|'money'|'nullable'>> = {
+ import_rules:{rule_key:'string',value:'nullable'},
  transactions:{posting_plan:'nullable',event_type:'string',status:'string',occurred_at:'string',display_amount:'money',display_name:'string',note:'string',created_at:'string',deleted_at:'nullable'},
  accounts:{name:'string',type:'string',balance_tracking:'string',balance_state:'string',opening_balance:'money',opening_balance_at:'string',last4:'string',deleted_at:'nullable'},
  source_records:{transaction_id:'string',source_type:'string',platform:'string',raw_payload:'string',created_at:'string'},

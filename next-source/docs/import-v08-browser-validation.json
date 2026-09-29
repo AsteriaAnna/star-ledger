@@ -1,0 +1,19 @@
+{
+  "results": [
+    "Import queue survives reload",
+    "Batch fills unknowns and preserves previously confirmed bank",
+    "Source time and balances correct on a New York device",
+    "Confirmed alias reused on another file",
+    "Same file does not add queue duplicates",
+    "Ignore and restore decisions persist",
+    "Budget can be disabled",
+    "Mobile and desktop import layouts and runtime checks",
+    "Encrypted browser sync restores account aliases without credentials",
+    "IndexedDB v1 migration preserves facts and device"
+  ],
+  "limitations": [
+    "Synthetic fixtures only",
+    "No Android/iOS hardware",
+    "No live user credentials"
+  ]
+}

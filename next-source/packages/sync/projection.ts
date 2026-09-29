@@ -22,11 +22,13 @@ export function project(ops:Operation[]) {
   if(!creates.length)throw Error('EDIT_BEFORE_CREATE');
   if(creates.length>1) {
    const type=creates[0].entity.type;
+   const sharedRule=type==='import_rules'&&creates.every(o=>o.entity.fields.rule_key===creates[0].entity.fields.rule_key);
    const derived=['balance_movements','consumption_effects','transaction_links'].includes(type);
    const sameSource=type==='source_records'&&creates.every(o=>JSON.stringify(o.entity.fields)===JSON.stringify(creates[0].entity.fields));
    const concurrent=creates.every(a=>creates.every(b=>a===b||(!before(a,b)&&!before(b,a))));
    const parent=creates[0].entity.fields.transaction_id??creates[0].entity.fields.from_transaction_id;
-   if(!(derived||sameSource)||!concurrent||!parent||creates.some(o=>(o.entity.fields.transaction_id??o.entity.fields.from_transaction_id)!==parent))throw Error('CREATE_ID_COLLISION');
+   if(!sharedRule&&(!(derived||sameSource)||!concurrent||!parent||creates.some(o=>(o.entity.fields.transaction_id??o.entity.fields.from_transaction_id)!==parent)))throw Error('CREATE_ID_COLLISION');
+   if(sharedRule&&!concurrent)throw Error('CREATE_ID_COLLISION');
   }
   for(const o of list)if(o.action!=='CREATE_ENTITY'&&!creates.some(c=>before(c,o)))throw Error('EDIT_BEFORE_CREATE');
   const e:Entity={type:list[0].entity.type,id:list[0].entity.id,fields:list[0].entity.type==='transactions'?{posting_plan:null}:{}};

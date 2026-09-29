@@ -8,6 +8,13 @@ export function financialIssues(entities:Entity[]):FinancialIssue[] {
  const consumption=(id:string)=>entities.filter(e=>e.type==='consumption_effects'&&e.fields.transaction_id===id)
   .reduce((n,e)=>n+(e.fields.amount as number),0);
  const groups=new Map<string,Entity[]>();const issues:FinancialIssue[]=[];
+ const sourceTransactions=new Map<string,Set<string>>();
+ for(const source of entities.filter(e=>e.type==='source_records')) {
+  let identity:string|undefined;try{const p=JSON.parse(String(source.fields.raw_payload));if(p.version===2&&typeof p.identity==='string')identity=p.identity;}catch{}
+  const id=String(source.fields.transaction_id);if(!identity||!active(get(id)))continue;
+  const set=sourceTransactions.get(identity)||new Set<string>();set.add(id);sourceTransactions.set(identity,set);
+ }
+ for(const set of sourceTransactions.values())if(set.size>1){const involved=[...set].sort();issues.push({transactionId:involved[0],code:'DUPLICATE_SOURCE_TRANSACTION',involved});}
  for(const link of entities.filter(e=>e.type==='transaction_links')) {
   const from=get(link.fields.from_transaction_id as string);if(!active(from))continue;
   const target=link.fields.to_transaction_id as string;

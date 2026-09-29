@@ -12,11 +12,12 @@ export class SqliteStore implements SyncStore {
   const exists=this.db.prepare("SELECT name FROM sqlite_master WHERE name='schema_version'").get();
   if(!exists) this.atomic(()=>this.db.exec(readFileSync(new URL('./migrations/001.sql',import.meta.url),'utf8')));
   const version=this.db.prepare('SELECT MAX(version) v FROM schema_version').get()?.v;
-  if(version!==1&&version!==2&&version!==3)throw Error('UNSUPPORTED_SCHEMA');
+  if(version!==1&&version!==2&&version!==3&&version!==4)throw Error('UNSUPPORTED_SCHEMA');
   const old=this.db.prepare('SELECT device_id FROM sync_devices').get();
   if(old && old.device_id!==device) throw Error('DEVICE_ID_MISMATCH');
   if(version===1)this.atomic(()=>this.db.exec(readFileSync(new URL('./migrations/002.sql',import.meta.url),'utf8')));
   if(version===1||version===2)this.atomic(()=>this.db.exec(readFileSync(new URL('./migrations/003.sql',import.meta.url),'utf8')));
+  if(Number(version)<4)this.atomic(()=>this.db.exec(readFileSync(new URL('./migrations/004.sql',import.meta.url),'utf8')));
   this.db.prepare('INSERT OR IGNORE INTO sync_devices VALUES(?)').run(device);
   }catch(error){this.db.close();throw error;}
  }
@@ -32,7 +33,7 @@ export class SqliteStore implements SyncStore {
  }
  project(entities:Entity[],conflicts:Conflict[],versions:FieldVersion[]):void {
   // Prototype projection rebuild: never remove source evidence or physically delete facts.
-  const order:EntityType[]=['transactions','accounts','source_records','balance_movements','consumption_effects','transaction_links'];
+  const order:EntityType[]=['transactions','accounts','source_records','balance_movements','consumption_effects','transaction_links','import_rules'];
   for(const type of order)for(const e of entities.filter(e=>e.type===type)) {
    const keys=Object.keys(fields[type]);
    this.db.prepare(`INSERT INTO ${type}(id,${keys.join(',')}) VALUES(${keys.map(()=>'?').join(',')},?) ON CONFLICT(id) DO UPDATE SET ${keys.map(k=>`${k}=excluded.${k}`).join(',')}`).run(e.id,...keys.map(k=>e.fields[k] as string|number|null));

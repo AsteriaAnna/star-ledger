@@ -128,3 +128,15 @@ html[data-layout="mobile"] .capture-preview{gap:17px}
 .match-box{border:1px solid #596847;background:#263020;border-radius:8px;padding:16px;margin:18px 0}.match-box strong{font-size:13px}.match-box p{font-size:11px;color:#acb897;margin:7px 0}.match-box button{margin-top:12px;font-size:12px}
 
 html[data-layout="mobile"] main{display:flex;flex-direction:column}html[data-layout="mobile"] main>.banner{order:-20}html[data-layout="mobile"] .page-heading{order:-10}html[data-layout="mobile"] .quick-actions{order:-9}html[data-layout="mobile"] .overview-grid{order:-8}html[data-layout="mobile"] .welcome-note{order:-7}html[data-layout="mobile"] .quick-actions small{font-size:10px}html[data-layout="mobile"] .page-heading p{font-size:12px}html[data-layout="mobile"] .stat-card small{font-size:10px}
+/* Import review controls remain usable on narrow displays. */
+.import-toolbar {flex-wrap:wrap;align-items:end;gap:12px}
+.import-toolbar label {min-width:0;flex:1 1 210px}
+.import-toolbar select {width:100%;max-width:100%}
+.import-row>div {min-width:0;overflow-wrap:anywhere}
+.import-row .secondary {white-space:normal}
+#app[aria-busy=true] {cursor:progress}
+@media(max-width:600px){.import-toolbar label{flex-basis:100%}.import-row{gap:8px}.import-row small{white-space:normal}.import-row>div:last-child{grid-column:2/-1}.button-row{flex-wrap:wrap}.button-row button{max-width:100%;white-space:normal}}
+.batch-tools{margin:16px 0;border:1px solid var(--line);border-radius:12px;padding:14px}
+.batch-tools summary{cursor:pointer;color:var(--accent);font-weight:600}
+.batch-tools[open] summary{margin-bottom:16px}
+html[data-layout="mobile"] .batch-tools{padding:12px}

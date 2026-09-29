@@ -1,19 +1,18 @@
 {
-  "date": "2026-09-29T04:46:46.681Z",
+  "date": "2026-09-29T17:10:04.951Z",
   "browser": "Chromium 138 automated",
   "results": [
     "Purchase and internal transfer update separate balance/consumption",
     "Partial refund and IndexedDB reload preserve correct totals",
     "Notes are persisted and escaped",
-    "CSV preview, account batch mapping, refund review and duplicate import",
-    "Official-shaped XLSX parsing and import",
+    "CSV review and repeat import avoid duplicate accounting",
+    "Actual read-excel-file XLSX parsing and import",
     "Tombstone delete and restore update visible bills",
     "Two browser devices encrypt, sync, restore and reverse-sync notes without persisting credentials",
     "Backup recovery recognizes existing encrypted remote commands without duplicate uploads",
     "Cached application reloads and writes real transactions offline",
     "All six mobile pages fit 390px viewport",
-    "No browser runtime errors in exercised workflows",
-    "Default opening time and immediate first purchase produce correct balance"
+    "No browser runtime errors in exercised workflows"
   ],
   "limitations": [
     "GitHub sync transport mocked; actual browser-to-GitHub authorization requires user credentials",
