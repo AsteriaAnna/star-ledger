@@ -24,4 +24,5 @@ export type FinancialEvent = Purchase|Income|InternalTransfer|Withdrawal|Externa
 export type SetStatus = {kind:'SET_STATUS';transactionId:string;status:'SUCCESS'|'FAILED';settlement?:FinancialEvent};
 export type BindAccount = ({kind:'BIND_ACCOUNT'}|{kind:'RESOLVE_ACCOUNT_BINDING'}) & {movementId:string;accountId:string};
 export type ResolveSettlement = {kind:'RESOLVE_SETTLEMENT';transactionId:string;status:'SUCCESS'|'FAILED';settlement?:FinancialEvent;expectedOperationIds:string[]};
-export type BusinessCommand = ResolveSettlement| SetStatus|BindAccount| DeleteTransaction| CreateAccount|Purchase|Income|InternalTransfer|Withdrawal|ExternalPayment|Repayment|Refund|Meaning;
+export type CorrectAmount = {kind:'CORRECT_AMOUNT';transactionId:string;amount:number;expectedAmount:number;reason:string;correctedAt:string;sourceId:string};
+export type BusinessCommand = CorrectAmount| ResolveSettlement| SetStatus|BindAccount| DeleteTransaction| CreateAccount|Purchase|Income|InternalTransfer|Withdrawal|ExternalPayment|Repayment|Refund|Meaning;

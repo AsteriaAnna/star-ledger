@@ -37,6 +37,35 @@ export function interpret(c:BusinessCommand,snapshot:LedgerSnapshot):Command[] {
   assertClear('accounts',id);return a;
  };
  const commands:Command[]=[];
+ if(c.kind==='CORRECT_AMOUNT') {
+  money(c.amount);money(c.expectedAmount);timestamp(c.correctedAt);identifier(c.sourceId);
+  const original=get('transactions',c.transactionId);
+  if(!original||original.fields.deleted_at||original.fields.status!=='SUCCESS')throw Error('TRANSACTION_UNAVAILABLE');
+  assertClear('transactions',original.id);
+  if(!['PURCHASE','INCOME'].includes(original.fields.event_type as string))throw Error('AMOUNT_CORRECTION_NOT_SUPPORTED');
+  if(original.fields.display_amount!==c.expectedAmount)throw Error('STALE_TRANSACTION');
+  if(typeof c.reason!=='string'||!c.reason.trim()||c.reason.length>500)throw Error('CORRECTION_REASON_REQUIRED');
+  if(c.amount===c.expectedAmount)return [];
+  const linked=entities.some(e=>e.type==='transaction_links'&&e.fields.to_transaction_id===original.id&&(()=>{const t=get('transactions',e.fields.from_transaction_id as string);return t&&!t.fields.deleted_at;})());
+  if(linked)throw Error('ACTIVE_RETURN_LINKS');
+  const movements=entities.filter(e=>e.type==='balance_movements'&&e.fields.transaction_id===original.id&&e.fields.amount!==0);
+  const effects=entities.filter(e=>e.type==='consumption_effects'&&e.fields.transaction_id===original.id);
+  const purchase=original.fields.event_type==='PURCHASE';
+  if(movements.length>1||(!purchase&&movements.length!==1)||effects.length!==(purchase?1:0)||effects.some(e=>e.fields.amount!==c.expectedAmount))throw Error('INVALID_CORRECTION_POSTINGS');
+  const postings:Entity[]=[];
+  const result:Command[]=[{action:'PATCH_FIELD',entity:{type:'transactions',id:original.id,fields:{display_amount:c.amount}}}];
+  for(const m of movements) {
+   const a=account(m.fields.account_id as AccountRef);
+   const sign=(purchase?-1:1)*(a?.fields.type==='LIABILITY'?-1:1);
+   if(m.fields.amount!==sign*c.expectedAmount)throw Error('INVALID_CORRECTION_POSTINGS');
+   postings.push({...m,fields:{...m.fields,amount:sign*c.amount}});
+   result.push({action:'PATCH_FIELD',entity:{type:m.type,id:m.id,fields:{amount:sign*c.amount}}});
+  }
+  for(const e of effects){postings.push({...e,fields:{...e.fields,amount:c.amount}});result.push({action:'PATCH_FIELD',entity:{type:e.type,id:e.id,fields:{amount:c.amount}}});}
+  result.push({action:'PATCH_FIELD',entity:{type:'transactions',id:original.id,fields:{posting_plan:JSON.stringify(postings)}}});
+  result.push(create({type:'source_records',id:c.sourceId,fields:{transaction_id:original.id,source_type:'MANUAL',platform:'星账 · 金额更正',raw_payload:JSON.stringify({kind:'AMOUNT_CORRECTION',before:c.expectedAmount,after:c.amount,reason:c.reason.trim(),correctedAt:c.correctedAt}),created_at:c.correctedAt}}));
+  return result;
+ }
  if(c.kind==='SET_STATUS') {
   const original=get('transactions',c.transactionId);
   if(!original||original.fields.deleted_at)throw Error('TRANSACTION_UNAVAILABLE');
