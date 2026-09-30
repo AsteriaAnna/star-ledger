@@ -11,8 +11,12 @@ export function project(ops:Operation[]) {
   for(const p of op.parents){a.add(p);for(const x of ancestry(p,visiting))a.add(x);}
   visiting.delete(id);ancestors.set(id,a);return a;
  }
- for(const op of ops)ancestry(op.id);
- const before=(a:Operation,b:Operation)=>ancestors.get(b.id)!.has(a.id);
+ // A local append-only history is a causal chain. Its positions answer ancestry
+ // without materializing an O(n²) transitive closure on every imported command.
+ const linear=byId.size===ops.length&&ops.every((op,i)=>i===0?op.parents.length===0:op.parents.length===1&&op.parents[0]===ops[i-1].id);
+ const position=new Map(linear?ops.map((op,i)=>[op.id,i] as const):[]);
+ if(!linear)for(const op of ops)ancestry(op.id);
+ const before=(a:Operation,b:Operation)=>linear?position.get(a.id)!<position.get(b.id)!:ancestors.get(b.id)!.has(a.id);
  const maximal=(list:Operation[])=>list.filter(a=>!list.some(b=>before(a,b))).sort((a,b)=>a.id.localeCompare(b.id));
  const grouped=new Map<string,Operation[]>();
  for(const o of ops){const key=JSON.stringify([o.entity.type,o.entity.id]);grouped.set(key,[...(grouped.get(key)||[]),o]);}
@@ -40,8 +44,8 @@ export function project(ops:Operation[]) {
    if(new Set(heads.map(o=>JSON.stringify(o.entity.fields[field]))).size>1)addConflict(field,heads.map(o=>({operation_id:o.id,value:o.entity.fields[field]})));
   }
   const deletes=list.filter(o=>o.action==='DELETE_ENTITY');
-  const childIds=new Set(ops.filter(o=>o.action==='CREATE_ENTITY'&&o.entity.fields.transaction_id===e.id).map(o=>JSON.stringify([o.entity.type,o.entity.id])));
-  const aggregateList=e.type==='transactions'?ops.filter(o=>list.includes(o)||childIds.has(JSON.stringify([o.entity.type,o.entity.id]))):list;
+  const childIds=new Set((deletes.length&&e.type==='transactions'?ops:[]).filter(o=>o.action==='CREATE_ENTITY'&&o.entity.fields.transaction_id===e.id).map(o=>JSON.stringify([o.entity.type,o.entity.id])));
+  const aggregateList=!deletes.length?[]:e.type==='transactions'?ops.filter(o=>list.includes(o)||childIds.has(JSON.stringify([o.entity.type,o.entity.id]))):list;
   const edits=aggregateList.filter(o=>o.action==='PATCH_FIELD'||(o.action==='RESOLVE_CONFLICT'&&!Object.hasOwn(o.entity.fields,'deleted_at')));
   const unresolved=new Map<string,Operation>();
   for(const d of deletes)for(const edit of edits)if(!before(d,edit)&&!before(edit,d)) {

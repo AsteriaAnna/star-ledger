@@ -1,6 +1,6 @@
 {
   "name": "ledger-core",
-  "version": "0.8.0-preview.1",
+  "version": "0.9.0-preview.1",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -21,7 +21,7 @@
     "build:web": "vite build --config apps/web/vite.config.ts && node scripts/build-web-sw.mjs",
     "preview:web": "vite preview --config apps/web/vite.config.ts --host 127.0.0.1",
     "test:web": "node scripts/test-web-ui.cjs",
-    "test:web:imports": "node scripts/test-web-import-v08.cjs",
+    "test:web:imports": "node scripts/test-web-import-v09.cjs",
     "typecheck:web": "tsc -p apps/web/tsconfig.json --noEmit"
   },
   "devDependencies": {

@@ -140,3 +140,11 @@ html[data-layout="mobile"] main{display:flex;flex-direction:column}html[data-lay
 .batch-tools summary{cursor:pointer;color:var(--accent);font-weight:600}
 .batch-tools[open] summary{margin-bottom:16px}
 html[data-layout="mobile"] .batch-tools{padding:12px}
+
+.account-setup-banner{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:18px}
+.import-account-group{border:1px solid var(--border,#33443d);border-radius:14px;padding:16px;margin:16px 0;min-width:0}
+.import-account-group legend{padding:0 8px;font-weight:600;overflow-wrap:anywhere}
+.import-account-group small{display:block;margin-bottom:12px;color:var(--muted,#a0b0a8)}
+@media(max-width:800px){.account-setup-banner{align-items:stretch;flex-direction:column}.import-account-group .form-grid{grid-template-columns:1fr}}
+.change-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;table-layout:fixed}
+.change-table td,.change-table th{text-align:left;padding:10px 6px;border-bottom:1px solid var(--border,#33443d);overflow-wrap:anywhere}

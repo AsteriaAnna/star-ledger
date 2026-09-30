@@ -1,6 +1,6 @@
-# 星账 · 网页个人版 0.7
+# 星账 · 网页个人版 0.9
 
-本版提供同一链接的电脑和手机界面。详细使用范围、数据边界与验收记录见 `docs/web-release-v0.7.md` 与 `docs/web-validation.json`。
+本版提供同一链接的电脑和手机界面，批量导入按渠道集中设置账户，亲情卡免逐笔确认，退款支持先入账后关联。当前规则与验证说明见 `docs/import-v0.9.md`；旧版发布记录保留在 docs 中。
 
 ```sh
 npm ci
@@ -8,6 +8,7 @@ npm run dev:web
 npm run build:web
 npm test
 npm run typecheck:web
+npm run test:web:imports
 ```
 
 浏览器验收：安装 Playwright 浏览器后运行 `npm run test:web`。也可通过 `CHROMIUM_EXECUTABLE` 指定测试浏览器路径。生成的 `web-dist` 可直接发布到 GitHub Pages 子目录。

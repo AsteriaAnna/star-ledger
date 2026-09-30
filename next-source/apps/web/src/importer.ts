@@ -1,11 +1,13 @@
-import {hash,money,wallDate,compoundChannel} from './normalize.ts';
+import {hash,money,wallDate} from './normalize.ts';
+import {needsSplit} from './channels.ts';
+import {sourceCategory} from './categories.ts';
 export {money} from './normalize.ts';
 export type Draft={key:string;platform:string;name:string;amount:string;date:string;kind:string;status:string;channel:string;account:string;to:string;category:string;original:string;note:string;raw:string;issue:string;selected:boolean;sourceType:'EXCEL'|'SCREENSHOT';order:string;sponsor:boolean;consumption:string;
- profile?:string;batch?:string;itemId?:string;identity?:string;sourceClass?:string;originalOrder?:string;precision?:string;blockers?:string[];confirmed?:string[];accountMode?:string;toMode?:string;accountHint?:string;toHint?:string;workflow?:string;transactionId?:string;fee?:string;parserVersion?:number;};
+ originalMode?:string;refundHint?:string;sourceCategory?:string;profile?:string;batch?:string;itemId?:string;identity?:string;sourceClass?:string;originalOrder?:string;precision?:string;blockers?:string[];confirmed?:string[];accountMode?:string;toMode?:string;accountHint?:string;toHint?:string;workflow?:string;transactionId?:string;fee?:string;parserVersion?:number;};
 export function csv(text:string):string[][]{const rows:string[][]=[];let row:string[]=[],v='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){v+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){row.push(v);v='';}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(v);if(row.some(x=>x.trim()))rows.push(row);row=[];v='';}else v+=c;}row.push(v);if(row.some(x=>x.trim()))rows.push(row);return rows;}
 const clean=(v:any)=>v instanceof Date?v.toISOString().slice(0,19):String(v??'').replace(/^\uFEFF/,'').trim();
 const norm=(s:string)=>s.replace(/[\s（()）]/g,'');
-export function parseRows(rows:any[][],config:{profile?:string;batch?:string;platform?:string;columns?:Record<string,string>}={}):Draft[]{
+export function parseRows(rows:any[][],config:{originalMode?:string;refundHint?:string;sourceCategory?:string;profile?:string;batch?:string;platform?:string;columns?:Record<string,string>}={}):Draft[]{
  const index=rows.findIndex(row=>row.map(clean).some(v=>/交易时间|付款时间|交易创建时间/.test(v))&&row.map(clean).some(v=>/金额/.test(v)));
  if(index<0)throw Error('没有找到交易时间与金额表头。请使用微信/支付宝官方账单。');
  const headers=rows[index].map(v=>norm(clean(v)));const intro=rows.slice(0,index).flat().map(clean).join(' ');
@@ -17,35 +19,39 @@ export function parseRows(rows:any[][],config:{profile?:string;batch?:string;pla
   const rawAmount=cell(row,'金额元','金额','交易金额元','交易金额');if(!rawAmount)continue;
   const type=cell(row,'交易类型','交易分类'),direction=cell(row,'收/支','收支'),statusText=cell(row,'当前状态','交易状态','状态');
   const channel=cell(row,'支付方式','收/付款方式','付款方式'),product=cell(row,'商品说明','商品名称','商品');
-  const name=cell(row,'交易对方','对方名称')||product||type||'账单记录';
+  const useful=(value:string)=>value&&value!=='/'&&value!=='-'?value:'';
+  const name=useful(cell(row,'交易对方','对方名称'))||useful(product)||type||'账单记录';
   const order=cell(row,'交易单号','交易订单号','交易号'),refundId=cell(row,'退款单号','退款订单号'),originalOrder=cell(row,'原交易单号','原订单号','原交易订单号');
   const raw=JSON.stringify(Object.fromEntries(headers.map((h,i)=>[h,clean(row[i])])));const blockers:string[]=[];
-  let kind='PURCHASE';const compound=compoundChannel(channel),sponsor=/亲情卡|亲属卡/.test(channel);
+  let kind='PURCHASE';const compound=needsSplit(channel),sponsor=/亲情卡|亲属卡/.test(channel);
   // Source event classification is independent of the user's editable accounting interpretation.
-  const refundEvent=!!refundId||/^退款(?:-|－|—|\s|$)/.test(product)||/^(退款|商户退款)$/.test(type)||(/退款成功/.test(statusText)&&direction==='收入');
-  if(refundEvent)kind='REFUND';
+  const refundEvent=!!refundId||/^退款(?:-|－|—|\s|$)/.test(product)||/^(退款|商户退款)$|[-－—]退款$|红包退回/.test(type)||(/退款成功/.test(statusText)&&direction==='收入');
+  if(refundEvent)kind=/转账.*退款|红包.*退回/.test(type)?'RETURN':'REFUND';
   else if(/花呗.*还款|还款.*花呗|主动还款|自动还款/.test(type+' '+product))kind='REPAYMENT';
   else if(/信用借还|借款|还款/.test(type+' '+product)){kind='UNKNOWN';blockers.push('EVENT');}
-  else if(/提现|充值/.test(type)){kind=/提现/.test(type)?'WITHDRAWAL':'INTERNAL_TRANSFER';blockers.push('TRANSFER');}
+  else if((platform==='微信'&&/^零钱(?:充值|提现)$/.test(type))||/^(?:充值|余额充值|余额提现|提现)$/.test(type)){kind=/提现/.test(type)?'WITHDRAWAL':'INTERNAL_TRANSFER';if(!(platform==='微信'&&/^零钱(?:充值|提现)$/.test(type)))blockers.push('TRANSFER');}
   else if(/转账|红包|押金/.test(type)){
-   kind=direction==='收入'?'UNKNOWN':/红包/.test(type)?'RED_PACKET':/押金/.test(type)?'DEPOSIT':'EXTERNAL_TRANSFER';
-   if(direction==='收入')blockers.push('EVENT');
+   kind=direction==='收入'?'TRANSFER_IN':/红包/.test(type)?'RED_PACKET':/押金/.test(type)?'DEPOSIT':'EXTERNAL_TRANSFER';
+
   }else if(direction==='收入')kind='INCOME';
   else if(direction!=='支出'&&!sponsor){kind='UNKNOWN';blockers.push('EVENT');}
-  if(sponsor&&kind==='PURCHASE')blockers.push('SPONSOR'); // group confirmation of beneficiary role
   if(compound)blockers.push('COMPOUND');
-  if(/退款/.test(statusText)&&!refundEvent)blockers.push('ORIGINAL_REFUNDED');
-  if(kind==='REFUND')blockers.push('ORIGINAL');
-  const status=/关闭|失败|已撤销/.test(statusText)?'FAILED':/待支付|处理中|未支付|待付款/.test(statusText)?'PENDING':/成功|已支付|已收钱|已收款|已转账|已存入|已退款|部分退款|退款完成|交易完成/.test(statusText)?'SUCCESS':'UNKNOWN';
+  const status=/关闭|失败|已撤销/.test(statusText)?'FAILED':/待支付|处理中|未支付|待付款/.test(statusText)?'PENDING':/成功|已支付|已收钱|已收款|已转账|已存入|已退款|已全额退款|对方已退还|部分退款|退款完成|交易完成|充值完成|提现已到账|等待确认收货/.test(statusText)?'SUCCESS':'UNKNOWN';
   if(status==='UNKNOWN')blockers.push('STATUS');
   const date=wallDate(dt);if(!date.utc)blockers.push('DATE');
-  let amount=rawAmount;try{amount=(money(rawAmount)/100).toFixed(2);}catch{blockers.push('AMOUNT');}
+  let amount=rawAmount,fee='0';try{amount=(money(rawAmount)/100).toFixed(2);
+   if(platform==='微信'&&type==='零钱提现'){const feeText=cell(row,'备注').match(/服务费[¥￥]\s*(\d+(?:\.\d{1,2})?)/)?.[1];if(feeText!==undefined){fee=feeText;const principal=money(rawAmount)-Math.round(Number(fee)*100);if(principal<=0)throw Error('INVALID_FEE');amount=(principal/100).toFixed(2);}else blockers.push('TRANSFER');}
+  }catch{blockers.push('AMOUNT');}
   if(platform==='未知模板')blockers.push('TEMPLATE');
   // Refunds without their own identifier are weak identities scoped to file+row, never collapsed by original order.
-  const sourceClass=refundEvent?'refund':'payment';const eventId=refundEvent?refundId:order;
+  const sourceClass=refundEvent?'refund':'payment';const eventId=refundEvent?(refundId||order):order;
   const identity=hash(eventId?{v:2,platform,profile,sourceClass,eventId}:{v:2,platform,profile,batch,row:rowIndex});
-  const d:Draft={key:identity,identity,itemId:hash({batch,profile,platform,row:rowIndex}),batch,profile,sourceClass,originalOrder,platform,name,amount,date:date.wall,precision:date.precision,kind,status,channel,account:'',to:'',category:'其他',original:'',note:cell(row,'备注')||product,raw,issue:'',selected:false,sourceType:'EXCEL',order:refundId||order,sponsor,consumption:'0',fee:'0',blockers,confirmed:[],workflow:status==='FAILED'?'noeffect':'review',parserVersion:2};
+  const d:Draft={key:identity,identity,itemId:hash({batch,profile,platform,row:rowIndex}),batch,profile,sourceClass,originalOrder,platform,name,amount,date:date.wall,precision:date.precision,kind,status,channel,account:'',to:'',category:sourceCategory(platform,cell(row,'交易分类'),name,product),sourceCategory:cell(row,'交易分类'),original:'',note:useful(cell(row,'备注'))||product,raw,issue:'',selected:false,sourceType:'EXCEL',order:refundId||order,sponsor,consumption:'0',fee,blockers,confirmed:[],workflow:status==='FAILED'?'noeffect':'review',parserVersion:3};
   d.issue=issues(d).join('；');d.selected=status==='SUCCESS'&&!d.issue;out.push(d);
+ }
+ // A closed order with an actual successful refund was paid before it closed. Keep both sides.
+ for(const d of out){if(d.platform!=='支付宝'||d.status!=='FAILED'||JSON.parse(d.raw)['交易状态']!=='交易关闭'||d.kind!=='PURCHASE')continue;
+  if(out.some(r=>r.platform===d.platform&&r.kind==='REFUND'&&r.status==='SUCCESS'&&(r.originalOrder||r.order.split(/[*_]/)[0])===d.order)){d.status='SUCCESS';d.workflow='review';d.selected=!d.issue;}
  }
  if(!out.length)throw Error('表格中没有可识别的交易行');if(out.length>3000)throw Error('一次最多导入3000笔，请按月导出');return out;
 }
@@ -65,6 +71,6 @@ export function parseScreenshot(text:string,fingerprint:string):Draft{
  const kind=/退款成功|退款金额/.test(text)?'REFUND':/花呗.*还款|主动还款|自动还款/.test(text)?'REPAYMENT':/转账/.test(text)?'EXTERNAL_TRANSFER':/收入|收款成功/.test(text)?'INCOME':'PURCHASE';
  const name=labelValue(['商户全称','交易对方','收款方'])||labelValue(['商品说明','商品名称','商品'])||'';
  const channel=labelValue(['付款方式','支付方式']);let normalizedAmount=amount;const blockers=['SCREENSHOT'];try{normalizedAmount=(money(amount)/100).toFixed(2);}catch{blockers.push('AMOUNT');}if(!date.utc)blockers.push('DATE');
- if(compoundChannel(channel))blockers.push('COMPOUND');
- return {key:order?hash({v:2,platform,profile:'本人',sourceClass:'payment',eventId:order}):fingerprint,itemId:fingerprint,profile:'本人',platform,name,amount:normalizedAmount,date:date.wall,precision:date.precision,kind,status:/失败|关闭/.test(text)?'FAILED':/待支付|处理中/.test(text)?'PENDING':/成功/.test(text)?'SUCCESS':'UNKNOWN',channel,account:'',to:'',category:'其他',original:'',note:'',raw:JSON.stringify({ocrText:originalText,fingerprint,order}),issue:'请核对截图后保存',selected:false,sourceType:'SCREENSHOT',order,sponsor:/亲情卡|亲属卡/.test(channel),consumption:'0',blockers,confirmed:[],workflow:'review',parserVersion:2};
+ if(needsSplit(channel))blockers.push('COMPOUND');
+ return {key:order?hash({v:2,platform,profile:'本人',sourceClass:'payment',eventId:order}):fingerprint,itemId:fingerprint,profile:'本人',platform,name,amount:normalizedAmount,date:date.wall,precision:date.precision,kind,status:/失败|关闭/.test(text)?'FAILED':/待支付|处理中/.test(text)?'PENDING':/成功/.test(text)?'SUCCESS':'UNKNOWN',channel,account:'',to:'',category:'其他',original:'',note:'',raw:JSON.stringify({ocrText:originalText,fingerprint,order}),issue:'请核对截图后保存',selected:false,sourceType:'SCREENSHOT',order,sponsor:/亲情卡|亲属卡/.test(channel),consumption:'0',blockers,confirmed:[],workflow:'review',parserVersion:3};
 }

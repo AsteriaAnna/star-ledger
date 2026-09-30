@@ -1,0 +1,12 @@
+{
+  "results": [
+    "First import creates/renames wallet and binds existing card once; Shanghai time is independent of device timezone",
+    "Alipay reuses renamed bank, groups Huabei payment/repayment, accepts sponsor + benefit, fills category and links partial refund",
+    "Reload and repeat file do not recreate accounts or duplicate transactions",
+    "A later original bill links the earlier refund without another receipt",
+    "Unlinked partial refund and transfer receipt import without invented income/account prompts",
+    "Mobile account setup and import fit the viewport and complete",
+    "Legacy reimport previews and explicitly corrects purchase to repayment without duplicate debit or lost evidence"
+  ],
+  "errors": []
+}
