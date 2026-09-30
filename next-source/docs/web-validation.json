@@ -1,6 +1,6 @@
 {
-  "date": "2026-09-29T17:10:04.951Z",
-  "browser": "Chromium 138 automated",
+  "date": "2026-09-30T06:08:29.300Z",
+  "browser": "Chromium 141.0.7390.37 automated",
   "results": [
     "Purchase and internal transfer update separate balance/consumption",
     "Partial refund and IndexedDB reload preserve correct totals",
@@ -17,6 +17,6 @@
   "limitations": [
     "GitHub sync transport mocked; actual browser-to-GitHub authorization requires user credentials",
     "Android/iOS real devices not tested",
-    "OCR engine tested separately with synthetic Chinese image; live CDN availability unverified"
+    "OCR and live CDN availability not exercised in this run"
   ]
 }

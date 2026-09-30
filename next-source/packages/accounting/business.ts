@@ -17,6 +17,10 @@ function timestamp(value:string):void {
 function identifier(value:string):void {if(typeof value!=='string'||!value.trim()||value.length>200)throw Error('INVALID_ID');}
 function sum(values:number[]):number {return values.reduce((a,b)=>{const n=a+b;if(!Number.isSafeInteger(n))throw Error('MONEY_OVERFLOW');return n;},0);}
 
+export function correctionSnapshot(entities:Entity[],id:string){
+ return JSON.stringify(entities.filter(e=>e.type==='transactions'&&e.id===id||e.fields.transaction_id===id||e.fields.from_transaction_id===id||e.fields.to_transaction_id===id).sort((a,b)=>(a.type+':'+a.id).localeCompare(b.type+':'+b.id)));
+}
+
 export class BusinessAccountingService {
  private core:AccountingService;
  constructor(store:Store,device:string){this.core=new AccountingService(store,device);}
@@ -37,6 +41,50 @@ export function interpret(c:BusinessCommand,snapshot:LedgerSnapshot):Command[] {
   assertClear('accounts',id);return a;
  };
  const commands:Command[]=[];
+ if(c.kind==='CORRECT_IMPORTED_EVENT') {
+  const t=get('transactions',c.transactionId);if(!t||t.fields.deleted_at)throw Error('TRANSACTION_UNAVAILABLE');
+  assertClear('transactions',t.id);timestamp(c.correctedAt);identifier(c.sourceId);
+  if(correctionSnapshot(entities,t.id)!==c.expectedSnapshot)throw Error('STALE_TRANSACTION');
+  if(c.replacement.id!==t.id||!['SUCCESS','FAILED'].includes(c.replacement.status||'SUCCESS'))throw Error('INVALID_CORRECTION');
+  if(entities.some(e=>e.type==='transaction_links'&&(e.fields.from_transaction_id===t.id||e.fields.to_transaction_id===t.id)))throw Error('ACTIVE_RETURN_LINKS');
+  const clean={...snapshot,entities:entities.filter(e=>!(e.type==='transactions'&&e.id===t.id)&&e.fields.transaction_id!==t.id)};
+  const generated=interpret({...c.replacement,source:undefined},clean),result:Command[]=[];
+  const proposed=generated.find(c=>c.entity.type==='transactions')!.entity;
+  for(const key of ['event_type','status','occurred_at','display_amount'])if(t.fields[key]!==proposed.fields[key])result.push({action:'PATCH_FIELD',entity:{type:'transactions',id:t.id,fields:{[key]:proposed.fields[key]}}});
+  for(const m of entities.filter(e=>e.type==='balance_movements'&&e.fields.transaction_id===t.id&&e.fields.amount!==0))result.push({action:'PATCH_FIELD',entity:{type:m.type,id:m.id,fields:{amount:0}}});
+  const postings:Entity[]=[];let index=0;
+  for(const cmd of generated.filter(cmd=>!['transactions','source_records'].includes(cmd.entity.type))){
+   if(cmd.entity.type==='balance_movements'){const entity={...cmd.entity,id:t.id+':correction:'+c.sourceId+':'+index++};result.push(create(entity));postings.push(entity);}
+   else if(cmd.entity.type==='consumption_effects'){
+    const old=get(cmd.entity.type,cmd.entity.id);postings.push(cmd.entity);
+    if(!old)result.push(cmd);else for(const key of ['amount','category_id','effective_at'])if(old.fields[key]!==cmd.entity.fields[key])result.push({action:'PATCH_FIELD',entity:{type:old.type,id:old.id,fields:{[key]:cmd.entity.fields[key]}}});
+   }else{result.push(cmd);postings.push(cmd.entity);}
+  }
+  if(!generated.some(cmd=>cmd.entity.type==='consumption_effects'))for(const e of entities.filter(e=>e.type==='consumption_effects'&&e.fields.transaction_id===t.id&&e.fields.amount!==0))result.push({action:'PATCH_FIELD',entity:{type:e.type,id:e.id,fields:{amount:0}}});
+  result.push({action:'PATCH_FIELD',entity:{type:'transactions',id:t.id,fields:{posting_plan:JSON.stringify(postings)}}});
+  result.push(create({type:'source_records',id:c.sourceId,fields:{transaction_id:t.id,source_type:'MANUAL',platform:'星账 · 导入修正',created_at:c.correctedAt,raw_payload:JSON.stringify({kind:'IMPORT_CORRECTION',before:JSON.parse(c.expectedSnapshot),after:postings,event:proposed.fields,evidence:c.replacement.source?.rawPayload||null})}}));
+  return result;
+ }
+ if(c.kind==='LINK_RETURN') {
+  const t=get('transactions',c.transactionId);
+  if(!t||t.fields.deleted_at||t.fields.status!=='SUCCESS'||!['REFUND','RETURN'].includes(String(t.fields.event_type)))throw Error('TRANSACTION_UNAVAILABLE');
+  assertClear('transactions',t.id);
+  const existing=entities.find(e=>e.type==='transaction_links'&&e.fields.from_transaction_id===t.id);
+  if(existing){if(existing.fields.to_transaction_id===c.originalId)return [];throw Error('RETURN_ALREADY_LINKED');}
+  const ms=entities.filter(e=>e.type==='balance_movements'&&e.fields.transaction_id===t.id&&e.fields.amount!==0);
+  if(ms.length>1)throw Error('INVALID_RETURN_MOVEMENTS');
+  const destination=(ms[0]?.fields.account_id as AccountRef)??null;
+  const generated=interpret({kind:t.fields.event_type as 'REFUND'|'RETURN',id:t.id,name:String(t.fields.display_name),amount:Number(t.fields.display_amount),occurredAt:String(t.fields.occurred_at),originalId:c.originalId,destination},snapshot);
+  const result:Command[]=[];
+  for(const cmd of generated.filter(cmd=>['consumption_effects','transaction_links'].includes(cmd.entity.type))){
+   const old=get(cmd.entity.type,cmd.entity.id);
+   if(!old)result.push(cmd);
+   else for(const key of ['amount','category_id','effective_at'])if(old.fields[key]!==cmd.entity.fields[key])result.push({action:'PATCH_FIELD',entity:{type:old.type,id:old.id,fields:{[key]:cmd.entity.fields[key]}}});
+  }
+  // A previously unresolved refund may turn out to have been paid by a sponsor.
+  if(ms.length&&!generated.some(cmd=>cmd.entity.type==='balance_movements'))result.push({action:'PATCH_FIELD',entity:{type:'balance_movements',id:ms[0].id,fields:{amount:0}}});
+  return result;
+ }
  if(c.kind==='CORRECT_AMOUNT') {
   money(c.amount);money(c.expectedAmount);timestamp(c.correctedAt);identifier(c.sourceId);
   const original=get('transactions',c.transactionId);
@@ -185,7 +233,7 @@ export function interpret(c:BusinessCommand,snapshot:LedgerSnapshot):Command[] {
    if(c.funding==='EXTERNAL_SPONSOR') {if(c.payer!==null)throw Error('SPONSOR_HAS_OWN_ACCOUNT');}
    else movement(c.payer,-c.amount);
    effect(c.amount,c.categoryId??null);break;
-  case 'INCOME':movement(c.destination,c.amount);break;
+  case 'INCOME':case 'TRANSFER_IN':movement(c.destination,c.amount);break;
   case 'INTERNAL_TRANSFER':
    different(c.from,c.to);
    for(const id of [c.from,c.to])if(account(id)?.fields.type==='LIABILITY')throw Error('USE_REPAYMENT_FOR_LIABILITY');
@@ -203,6 +251,12 @@ export function interpret(c:BusinessCommand,snapshot:LedgerSnapshot):Command[] {
    if((c.consumptionAmount??0)>c.amount)throw Error('CONSUMPTION_EXCEEDS_AMOUNT');
    movement(c.from,-c.amount);effect(c.consumptionAmount??0,c.categoryId??null);break;
   case 'REFUND':case 'RETURN': {
+   if(!c.originalId){
+    if(c.funding==='EXTERNAL_SPONSOR'){if(c.destination!==null)throw Error('SPONSORED_REFUND_HAS_OWN_ACCOUNT');}
+    else movement(c.destination,c.amount);
+    effect(c.kind==='REFUND'?-c.amount:0,c.categoryId||'待关联退款');
+    break;
+   }
    const original=get('transactions',c.originalId);
    if(!original||original.fields.deleted_at||original.fields.status!=='SUCCESS')throw Error('ORIGINAL_UNAVAILABLE');
    assertClear('transactions',c.originalId);
@@ -219,6 +273,7 @@ export function interpret(c:BusinessCommand,snapshot:LedgerSnapshot):Command[] {
    if(reduction===undefined) {
     if(originalConsumption===0)reduction=0;
     else if(originalConsumption===original.fields.display_amount)reduction=c.amount;
+    else if(c.amount===original.fields.display_amount&&refunded===0)reduction=originalConsumption;
     else throw Error('CONSUMPTION_ALLOCATION_REQUIRED');
    }
    money(reduction,true);
