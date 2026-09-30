@@ -3,7 +3,7 @@ export type Channel = {name:string;type:'ASSET'|'LIABILITY';last4:string;bank:st
 // These tokens describe checkout benefits, not a second personal bank/wallet account.
 export function paymentChannel(raw:string){
  const parts=channelKey(raw).split(/[&＆+＋]/).map(s=>s.trim()).filter(Boolean);
- const promotion=(s:string)=>/^(?:红包|闪购红包|淘宝闪购红包|支付宝红包|商家红包|优惠券|立减金|集分宝)(?:\([^)]*\))?$/.test(s);
+ const promotion=(s:string)=>/^(?:红包|闪购红包|闪购支付红包|淘宝闪购红包|支付宝红包|商家红包|优惠券|立减金|集分宝)(?:\([^)]*\))?$/.test(s);
  const discounts=parts.filter(promotion),funding=parts.filter(s=>!promotion(s));
  return {channel:funding.length===1?funding[0]:'',discounts,compound:funding.length>1||/组合支付|组合付款/.test(raw)};
 }
@@ -19,7 +19,11 @@ export function describeChannel(platform:string,raw:string):Channel|undefined{
  const last4=s.match(/(?:\(|尾号\s*)(\d{4})\)?$/)?.[1]||'',bank=bankName(s);
  if(bank&&last4&&/储蓄卡|借记卡|信用卡|贷记卡/.test(s))return {name:s,type:/信用卡|贷记卡/.test(s)?'LIABILITY':'ASSET',last4,bank,identity:bank+':'+(/信用卡|贷记卡/.test(s)?'credit':'debit')+':'+last4};
 }
-export function roleChannel(d:{kind:string;channel:string;raw:string},role:'account'|'to'){
+export function roleChannel(d:{kind:string;channel:string;raw:string;platform?:string},role:'account'|'to'){
+ let raw:any;try{raw=JSON.parse(d.raw);}catch{}
+ if(d.platform==='微信'&&role==='account'&&d.kind==='TRANSFER_IN'&&raw?.['当前状态']==='已存入零钱'&&emptyChannel(d.channel))return '零钱';
+ if(d.platform==='微信'&&raw?.['交易类型']==='零钱充值'&&d.kind==='INTERNAL_TRANSFER')return role==='to'?'零钱':paymentChannel(d.channel).channel;
+ if(d.platform==='微信'&&raw?.['交易类型']==='零钱提现'&&d.kind==='WITHDRAWAL')return role==='account'?'零钱':paymentChannel(d.channel).channel;
  return role==='to'&&d.kind==='REPAYMENT'&&/花呗/.test(d.raw)?'花呗':role==='account'?paymentChannel(d.channel).channel:'';
 }
 export const needsSplit=(channel:string)=>paymentChannel(channel).compound;

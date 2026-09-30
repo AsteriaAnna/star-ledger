@@ -1,6 +1,6 @@
 {
-  "date": "2026-09-30T06:08:29.300Z",
-  "browser": "Chromium 141.0.7390.37 automated",
+  "date": "2026-09-30T06:22:34.233Z",
+  "browser": "141.0.7390.37",
   "results": [
     "Purchase and internal transfer update separate balance/consumption",
     "Partial refund and IndexedDB reload preserve correct totals",

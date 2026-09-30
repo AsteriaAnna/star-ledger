@@ -123,3 +123,36 @@ test('explicit import correction changes event/accounts atomically, preserves ra
  assert.equal(s.get('source_records',d.key+'-source')!.fields.raw_payload,source(d).rawPayload);
  const count=s.state.ops.length;assert.throws(()=>service.execute(correction),/STALE_TRANSACTION/);assert.equal(s.state.ops.length,count);assert.equal(snapshot(s).conflicts.length,0);
 });
+
+test('consumer export statuses preserve paid orders and distinguish merchant recharge from wallet transfers',()=>{
+ const ds=parse([row('亲情卡(家人)&闪购支付红包','new','账户充值','充值缴费','不计收支','10','交易成功'),row('余额','pending-delivery','商品','日用百货','支出','10','等待确认收货')]);
+ assert.equal(ds[0].kind,'PURCHASE');assert.equal(ds[0].sponsor,true);assert.deepEqual(ds[0].blockers,[]);assert.equal(ds[1].status,'SUCCESS');
+});
+test('closed Alipay orders with successful exact refunds retain both accounting sides',()=>{
+ const ds=parse([row('余额','closed','商品','购物','支出','10','交易关闭'),row('余额','closed*REFUND_1','退款-商品','购物','不计收支','10','退款成功','2026-09-21 12:00:00'),row('余额','unpaid','商品','购物','支出','10','交易关闭')]);
+ assert.equal(ds[0].status,'SUCCESS');assert.equal(ds[2].status,'FAILED');assert.ok(resolveRefund(ds[1],refundContext([],ds)).id);
+});
+test('WeChat wallet transfers resolve both endpoints and subtract explicit fees from exported withdrawal total',()=>{
+ const h=['交易时间','交易类型','交易对方','商品','收/支','金额(元)','支付方式','当前状态','交易单号','备注'];
+ const ds=parseRows([h,['2026-09-20 12:00:00','零钱充值','银行','/','/','200','农业银行储蓄卡(1234)','充值完成','charge','/'],['2026-09-21 12:00:00','零钱提现','银行','/','/','100.10','农业银行储蓄卡(1234)','提现已到账','withdraw','服务费¥0.10']]);
+ const s=setup(ds),drafts=s.state.imports!;assert.equal(s.entities.filter(e=>e.type==='accounts').length,2);assert.ok(drafts.every(d=>d.status==='SUCCESS'&&!d.issue));assert.equal(drafts[1].amount,'100.00');assert.equal(drafts[1].fee,'0.10');assert.equal(drafts[0].account,drafts[1].to);assert.equal(drafts[0].to,drafts[1].account);
+});
+test('WeChat returned transfer with missing counterparty uses unique full amount and original transfer remark',()=>{
+ const h=['交易时间','交易类型','交易对方','商品','收/支','金额(元)','支付方式','当前状态','交易单号','备注'];
+ const ds=parseRows([h,['2026-09-20 12:00:00','转账','朋友','转账备注:订金','支出','10','零钱','对方已退还','pay','/'],['2026-09-21 12:00:00','转账-退款','/','转账备注:订金','收入','10','零钱','已全额退款','return','/']]);
+ assert.ok(ds.every(d=>d.status==='SUCCESS'));assert.equal(ds[1].name,'转账备注:订金');assert.ok(resolveRefund(ds[1],refundContext([],ds)).id);
+ const ambiguous=[...ds,{...ds[0],identity:'second',key:'second'}];assert.equal(resolveRefund(ds[1],refundContext([],ambiguous)).id,'');
+});
+
+test('linear import history optimization matches causal projection with unordered operations',()=>{
+ const s=new MemoryStore(fresh()),service=svc(s);service.execute({kind:'CREATE_ACCOUNT',id:'a',name:'卡',accountType:'ASSET',openingBalance:null,openingBalanceAt:'2026-09-01T00:00:00Z'});
+ for(let i=0;i<20;i++)service.execute({kind:'PURCHASE',id:'p'+i,name:'消费',amount:100+i,payer:'a',categoryId:'其他',occurredAt:'2026-09-20T04:00:00Z'});
+ service.execute({kind:'DELETE_TRANSACTION',transactionId:'p0',deletedAt:'2026-09-21T00:00:00Z'});
+ const stable=(p:ReturnType<typeof project>)=>({entities:p.entities.sort((a,b)=>(a.type+a.id).localeCompare(b.type+b.id)),conflicts:p.conflicts.sort((a,b)=>a.id.localeCompare(b.id)),versions:p.versions.sort((a,b)=>(a.type+a.id+a.field).localeCompare(b.type+b.id+b.field))});
+ assert.deepEqual(stable(project(s.state.ops)),stable(project([...s.state.ops].reverse())));
+});
+
+test('WeChat received transfer explicitly deposited into wallet resolves the missing payment channel',()=>{
+ const h=['交易时间','交易类型','交易对方','商品','收/支','金额(元)','支付方式','当前状态','交易单号'];
+ const ds=parseRows([h,['2026-09-20 12:00:00','转账','朋友','转账','收入','10','/','已存入零钱','received']]);const s=setup(ds),d=s.state.imports![0];assert.equal(d.kind,'TRANSFER_IN');assert.ok(d.account);assert.equal(d.issue,'');assert.equal(s.get('accounts',d.account)!.fields.name,'微信零钱');assert.equal(d.channel,'/');
+});

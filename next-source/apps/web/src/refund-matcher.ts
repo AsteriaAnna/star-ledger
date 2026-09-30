@@ -42,6 +42,7 @@ export function resolveRefund(d:Draft,entities:Entity[]){
   if(orderKeys.length)return sources.some(p=>orderKeys.includes(p.order));
   if(d.platform!=='微信'||delta>90*86400000||Number(t.fields.display_amount)!==amount||!sources.length)return false;
   const name=merchant(d.name),type=merchant(raw['交易类型']||'');
+  if(d.kind==='RETURN'&&(!raw['交易对方']||raw['交易对方']==='/')){const remark=raw['商品']||'';return !!remark&&remark!=='/'&&sources.some(p=>{try{const original=JSON.parse(p.original||'{}');return original['商品']===remark;}catch{return false;}});}
   return !!name&&(merchant(String(t.fields.display_name))===name||!!type&&merchant(String(t.fields.display_name))===type);
  });
  if(candidates.length!==1)return {...none,candidates:candidates.map(t=>t.id),reason:candidates.length?'有多个原交易候选，可入账后关联':none.reason};

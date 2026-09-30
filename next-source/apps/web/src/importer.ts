@@ -19,7 +19,8 @@ export function parseRows(rows:any[][],config:{originalMode?:string;refundHint?:
   const rawAmount=cell(row,'金额元','金额','交易金额元','交易金额');if(!rawAmount)continue;
   const type=cell(row,'交易类型','交易分类'),direction=cell(row,'收/支','收支'),statusText=cell(row,'当前状态','交易状态','状态');
   const channel=cell(row,'支付方式','收/付款方式','付款方式'),product=cell(row,'商品说明','商品名称','商品');
-  const name=cell(row,'交易对方','对方名称')||product||type||'账单记录';
+  const useful=(value:string)=>value&&value!=='/'&&value!=='-'?value:'';
+  const name=useful(cell(row,'交易对方','对方名称'))||useful(product)||type||'账单记录';
   const order=cell(row,'交易单号','交易订单号','交易号'),refundId=cell(row,'退款单号','退款订单号'),originalOrder=cell(row,'原交易单号','原订单号','原交易订单号');
   const raw=JSON.stringify(Object.fromEntries(headers.map((h,i)=>[h,clean(row[i])])));const blockers:string[]=[];
   let kind='PURCHASE';const compound=needsSplit(channel),sponsor=/亲情卡|亲属卡/.test(channel);
@@ -28,23 +29,29 @@ export function parseRows(rows:any[][],config:{originalMode?:string;refundHint?:
   if(refundEvent)kind=/转账.*退款|红包.*退回/.test(type)?'RETURN':'REFUND';
   else if(/花呗.*还款|还款.*花呗|主动还款|自动还款/.test(type+' '+product))kind='REPAYMENT';
   else if(/信用借还|借款|还款/.test(type+' '+product)){kind='UNKNOWN';blockers.push('EVENT');}
-  else if(/提现|充值/.test(type)){kind=/提现/.test(type)?'WITHDRAWAL':'INTERNAL_TRANSFER';blockers.push('TRANSFER');}
+  else if((platform==='微信'&&/^零钱(?:充值|提现)$/.test(type))||/^(?:充值|余额充值|余额提现|提现)$/.test(type)){kind=/提现/.test(type)?'WITHDRAWAL':'INTERNAL_TRANSFER';if(!(platform==='微信'&&/^零钱(?:充值|提现)$/.test(type)))blockers.push('TRANSFER');}
   else if(/转账|红包|押金/.test(type)){
    kind=direction==='收入'?'TRANSFER_IN':/红包/.test(type)?'RED_PACKET':/押金/.test(type)?'DEPOSIT':'EXTERNAL_TRANSFER';
 
   }else if(direction==='收入')kind='INCOME';
   else if(direction!=='支出'&&!sponsor){kind='UNKNOWN';blockers.push('EVENT');}
   if(compound)blockers.push('COMPOUND');
-  const status=/关闭|失败|已撤销/.test(statusText)?'FAILED':/待支付|处理中|未支付|待付款/.test(statusText)?'PENDING':/成功|已支付|已收钱|已收款|已转账|已存入|已退款|部分退款|退款完成|交易完成/.test(statusText)?'SUCCESS':'UNKNOWN';
+  const status=/关闭|失败|已撤销/.test(statusText)?'FAILED':/待支付|处理中|未支付|待付款/.test(statusText)?'PENDING':/成功|已支付|已收钱|已收款|已转账|已存入|已退款|已全额退款|对方已退还|部分退款|退款完成|交易完成|充值完成|提现已到账|等待确认收货/.test(statusText)?'SUCCESS':'UNKNOWN';
   if(status==='UNKNOWN')blockers.push('STATUS');
   const date=wallDate(dt);if(!date.utc)blockers.push('DATE');
-  let amount=rawAmount;try{amount=(money(rawAmount)/100).toFixed(2);}catch{blockers.push('AMOUNT');}
+  let amount=rawAmount,fee='0';try{amount=(money(rawAmount)/100).toFixed(2);
+   if(platform==='微信'&&type==='零钱提现'){const feeText=cell(row,'备注').match(/服务费[¥￥]\s*(\d+(?:\.\d{1,2})?)/)?.[1];if(feeText!==undefined){fee=feeText;const principal=money(rawAmount)-Math.round(Number(fee)*100);if(principal<=0)throw Error('INVALID_FEE');amount=(principal/100).toFixed(2);}else blockers.push('TRANSFER');}
+  }catch{blockers.push('AMOUNT');}
   if(platform==='未知模板')blockers.push('TEMPLATE');
   // Refunds without their own identifier are weak identities scoped to file+row, never collapsed by original order.
   const sourceClass=refundEvent?'refund':'payment';const eventId=refundEvent?(refundId||order):order;
   const identity=hash(eventId?{v:2,platform,profile,sourceClass,eventId}:{v:2,platform,profile,batch,row:rowIndex});
-  const d:Draft={key:identity,identity,itemId:hash({batch,profile,platform,row:rowIndex}),batch,profile,sourceClass,originalOrder,platform,name,amount,date:date.wall,precision:date.precision,kind,status,channel,account:'',to:'',category:sourceCategory(platform,cell(row,'交易分类'),name,product),sourceCategory:cell(row,'交易分类'),original:'',note:cell(row,'备注')||product,raw,issue:'',selected:false,sourceType:'EXCEL',order:refundId||order,sponsor,consumption:'0',fee:'0',blockers,confirmed:[],workflow:status==='FAILED'?'noeffect':'review',parserVersion:3};
+  const d:Draft={key:identity,identity,itemId:hash({batch,profile,platform,row:rowIndex}),batch,profile,sourceClass,originalOrder,platform,name,amount,date:date.wall,precision:date.precision,kind,status,channel,account:'',to:'',category:sourceCategory(platform,cell(row,'交易分类'),name,product),sourceCategory:cell(row,'交易分类'),original:'',note:useful(cell(row,'备注'))||product,raw,issue:'',selected:false,sourceType:'EXCEL',order:refundId||order,sponsor,consumption:'0',fee,blockers,confirmed:[],workflow:status==='FAILED'?'noeffect':'review',parserVersion:3};
   d.issue=issues(d).join('；');d.selected=status==='SUCCESS'&&!d.issue;out.push(d);
+ }
+ // A closed order with an actual successful refund was paid before it closed. Keep both sides.
+ for(const d of out){if(d.platform!=='支付宝'||d.status!=='FAILED'||JSON.parse(d.raw)['交易状态']!=='交易关闭'||d.kind!=='PURCHASE')continue;
+  if(out.some(r=>r.platform===d.platform&&r.kind==='REFUND'&&r.status==='SUCCESS'&&(r.originalOrder||r.order.split(/[*_]/)[0])===d.order)){d.status='SUCCESS';d.workflow='review';d.selected=!d.issue;}
  }
  if(!out.length)throw Error('表格中没有可识别的交易行');if(out.length>3000)throw Error('一次最多导入3000笔，请按月导出');return out;
 }
